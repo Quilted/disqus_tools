@@ -1,0 +1,58 @@
+#!/usr/bin/env ruby
+
+require 'rubygems'
+require 'commander/import'
+require 'httparty'
+require 'CGI'
+
+program :version, '0.0.1'
+program :description, 'Interacts with the Disqus API'
+
+command :post_count do |c|
+  c.syntax = 'disqus_tools post_count <file to parse> <api_key> <forum_shortid> [options]'
+  c.description = 'Takes a CSV of Disqus thread identifiers and creates a CSV that maps identifiers to number of posts (comments) for each thread.'
+  c.example 'Find post count for threads whose identifiers are in "identifiers.csv" with the API KEY "12345" and the forum short id "quilted"', 'disqus_tools post_count "identifiers.csv" "1234" "quilted"'
+  c.action do |args, options|
+    errors = ''
+    errors += "Please specify a file!\n" if args[0].nil?
+    errors += "Please specify an api key!\n" if args[1].nil?
+    errors += "Please specify a Disqus forum short id!\n" if args[2].nil?
+
+    if errors.empty?
+      post_count(args[0], args[1], args[2])
+    else
+      puts errors
+    end
+  end
+end
+
+# @TODO assumes for now that the Disqus identifier is in the first column
+def post_count(file, api_key, forum_shortid)
+  data = Array.new
+  File.open(file).each_line do |line|
+    # Find the key on which to find the union.
+    columns = line.split(',').each {|i| i.chomp! }
+    
+    # Disqus encodes with spaces as + signs.
+    identifier = CGI::escape columns[0]
+
+    # Ping Disqus.
+    response = HTTParty.get "https://disqus.com/api/3.0/threads/list.json?api_key=#{ api_key }&forum=#{ forum_shortid }&thread%3Aident=#{ identifier }"
+
+    # Get the number of posts.
+    posts = response.parsed_response['response'].first['posts']
+    
+    # Construct the output.
+    data.push(columns.push(posts))
+  end
+
+  # Rewrite the data as strings
+  output = ''
+  data.each do |line|
+    output += line.join(',') + "\n"
+  end
+  
+  # Create a new file.
+  File.open('post_count.csv', 'w') {|f| f.write(output) }
+end
+
